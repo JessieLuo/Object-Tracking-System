@@ -6,7 +6,7 @@ import numpy as np
 import av
 from av.utils import Fraction
 
-from publish import BaseWriter
+from streaming.publish import BaseWriter
 
 
 class RtspWriter(BaseWriter):

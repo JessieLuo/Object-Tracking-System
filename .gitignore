@@ -8,7 +8,14 @@ weights/
 data/
 result/
 *.onnx
+*.mnn
 *.pt
+*.bin
+*.param
+
+*_ncnn_model/
+*_paddle_model/
+backup/
 
 # Created by .ignore support plugin (hsz.mobi)
 ### Python template
