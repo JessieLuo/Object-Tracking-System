@@ -2,7 +2,7 @@
 import cv2 as cv
 from typing import Optional, Tuple
 
-from publish import BaseWriter
+from streaming.publish import BaseWriter
 
 
 class VideoFileWriter(BaseWriter):

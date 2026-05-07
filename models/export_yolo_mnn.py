@@ -4,10 +4,10 @@ from ultralytics import YOLO
 model = YOLO("yolo26n.pt")
 
 # Export the model to MNN format
-model.export(format="mnn", imgsz=320)
+model.export(format="mnn", imgsz=1440)
 
 # Load the exported MNN model
 mnn_model = YOLO("yolo26n.mnn")
 
 # Run inference
-results = mnn_model("../track/data/bus.jpg")
+results = mnn_model("data/00000000.png")

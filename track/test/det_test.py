@@ -1,13 +1,13 @@
 import cv2
 import time
-from track.detection.det import UltralyticsYoloDetector
+from MOT_Replica.track.detection.yolo_det import UltralyticsYoloDetector
 
 if __name__ == "__main__":
-    img_path = "track/data/bus.jpg"
-    out_path = "track/data/det.jpg"
+    img_path = "track/data/00001355.png"
+    out_path = "track/data/00001355_det.jpg"
 
     detector = UltralyticsYoloDetector(
-        "models/yolo11n_ncnn_model", 
+        "models/yolo26n.mnn",
         conf=0.3, classes=[0]) # 只检测person类
 
     img = cv2.imread(img_path)

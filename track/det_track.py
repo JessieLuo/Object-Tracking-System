@@ -1,10 +1,5 @@
-from track.utils.fps import FpsMeter, draw_fps
-from streaming.rtsp_pub import RtspWriter
-from streaming.subscribe import FrameSource
-from ultralytics import YOLO
-
 import numpy as np
-import cv2
+from ultralytics import YOLO
 
 
 class YOLOTracker:
@@ -41,6 +36,5 @@ class YOLOTracker:
         dets = np.column_stack((boxes, scores, clses, ids)).astype(np.float32)
 
         vis = r.plot()
-        # vis = cv2.cvtColor(vis, cv2.COLOR_RGB2BGR)
 
         return dets, vis
