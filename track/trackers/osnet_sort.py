@@ -121,7 +121,7 @@ class ReIDTracker:
         bank_size=20,
         ema_alpha=0.9,  # ??
         reid_min_h=80,
-        reid_weights="weights/osnet_x0_25_market.pth",
+        reid_weights="weights/osnet_x0_25_msmt17.pt",
         high_thresh=0.4,
         low_thresh=0.1,
         low_iou_thresh=0.2,
@@ -145,10 +145,27 @@ class ReIDTracker:
         self.low_thresh = low_thresh
         self.low_iou_thresh = low_iou_thresh
 
+        # optimize for rpi
+        # 每帧最多允许跑几次 ReID
+        self.max_reid_per_frame = 2
+        # 当前这一帧已经跑了几次 ReID
+        self.reid_count = 0
+
         self.reid = OSNetReID(
             weights_path=reid_weights,
             min_h=reid_min_h,
         )
+    
+
+    def extract_reid(self, frame, box):
+        """restrict reid count"""
+        if self.reid_count >= self.max_reid_per_frame:
+            return None
+
+        feat = self.reid.extract(frame, box) # ! Heavy Calculation
+        self.reid_count += 1
+
+        return feat
 
     def reid_threshold_by_lost(self, lost):
         """dynamic threshold based on lost frames"""
@@ -210,6 +227,7 @@ class ReIDTracker:
     def update(self, frame, detections):
         """Trackers core logic"""
         self.frame_id += 1
+        self.reid_count = 0
 
         detections = np.asarray(detections, dtype=np.float32)
 
@@ -270,7 +288,7 @@ class ReIDTracker:
             feat = None
 
             if self.frame_id % self.reid_interval == 0:
-                feat = self.reid.extract(frame, det[:4])
+                feat = self.extract_reid(frame, det[:4])
 
             trk.update(det[:4], det[4], det[5], feat)
             new_active.append(trk)
@@ -328,7 +346,7 @@ class ReIDTracker:
             det_feats = []
 
             for det in remain_dets:
-                feat = self.reid.extract(frame, det[:4])
+                feat = self.extract_reid(frame, det[:4])
                 det_feats.append(feat)
 
             cost_reid = np.ones(
@@ -370,7 +388,7 @@ class ReIDTracker:
         # =====================================================
 
         for det in remain_dets:
-            feat = self.reid.extract(frame, det[:4])
+            feat = self.extract_reid(frame, det[:4])
 
             trk = Track(
                 box=det[:4],
