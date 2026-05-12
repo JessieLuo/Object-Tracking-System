@@ -18,7 +18,7 @@ if __name__ == "__main__":
 
     tracker = ReIDTracker(
         iou_thresh=0.3,
-        reid_thresh=0.75,
+        reid_thresh=0.50,
         max_lost=30,
         reid_interval=5,
         reid_weights="weights/osnet_x0_25_msmt17.pt"

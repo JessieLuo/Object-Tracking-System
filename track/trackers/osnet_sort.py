@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 
 from collections import deque
+from scipy.optimize import linear_sum_assignment
 
 from .kalman import KalmanBox
 from .matching import iou, match_by_cost
@@ -9,7 +10,16 @@ from .reid import OSNetReID
 
 
 class Track:
-    def __init__(self, box, score, cls_id, track_id, feat=None, bank_size=20):
+    def __init__(
+        self,
+        box,
+        score,
+        cls_id,
+        track_id,
+        feat=None,
+        bank_size=20,
+        ema_alpha=0.9,
+    ):
         self.id = track_id
         self.score = float(score)
         self.cls_id = float(cls_id)
@@ -23,9 +33,37 @@ class Track:
         self.state = "active"
 
         self.features = deque(maxlen=bank_size)
+        self.smooth_feat = None
+        self.ema_alpha = ema_alpha
 
         if feat is not None:
-            self.features.append(feat)
+            self.update_feature(feat)
+
+    def update_feature(self, feat):
+        if feat is None:
+            return
+
+        feat = feat.astype(np.float32)
+
+        norm = np.linalg.norm(feat)
+        if norm < 1e-6:
+            return
+
+        feat = feat / norm
+
+        self.features.append(feat)
+
+        if self.smooth_feat is None:
+            self.smooth_feat = feat.copy()
+        else:
+            self.smooth_feat = (
+                self.ema_alpha * self.smooth_feat
+                + (1.0 - self.ema_alpha) * feat
+            )
+            self.smooth_feat = self.smooth_feat / max(
+                np.linalg.norm(self.smooth_feat),
+                1e-6,
+            )
 
     def predict(self):
         self.box = self.kf.predict()
@@ -43,16 +81,34 @@ class Track:
         self.lost = 0
         self.state = "active"
 
-        if feat is not None:
-            self.features.append(feat)
+        self.update_feature(feat)
 
     def appearance_sim(self, feat):
-        if feat is None or len(self.features) == 0:
+        if feat is None:
             return -1.0
 
-        sims = [float(np.dot(f, feat)) for f in self.features]
+        feat = feat.astype(np.float32)
+        feat = feat / max(np.linalg.norm(feat), 1e-6)
 
-        return max(sims)
+        smooth_sim = -1.0
+        bank_sim = -1.0
+
+        if self.smooth_feat is not None:
+            smooth_sim = float(np.dot(self.smooth_feat, feat))
+
+        if len(self.features) > 0:
+            bank_sim = max(float(np.dot(f, feat)) for f in self.features)
+
+        if smooth_sim < 0 and bank_sim < 0:
+            return -1.0
+
+        if smooth_sim < 0:
+            return bank_sim
+
+        if bank_sim < 0:
+            return smooth_sim
+
+        return 0.7 * smooth_sim + 0.3 * bank_sim
 
 
 class ReIDTracker:
@@ -64,6 +120,7 @@ class ReIDTracker:
         min_hits=1,
         reid_interval=5,
         bank_size=20,
+        ema_alpha=0.9, # ??
         reid_min_h=80,
         reid_weights="weights/osnet_x0_25_market.pth"
     ):
@@ -80,11 +137,25 @@ class ReIDTracker:
         self.min_hits = min_hits
         self.reid_interval = reid_interval
         self.bank_size = bank_size
+        self.ema_alpha = ema_alpha # ??
 
         self.reid = OSNetReID(
             weights_path=reid_weights,
             min_h=reid_min_h,
         )
+
+    def reid_threshold_by_lost(self, lost):
+        """dynamic threshold based on lost frames"""
+        if lost <= 10:
+            return self.reid_thresh
+
+        if lost <= 30:
+            return self.reid_thresh + 0.03
+
+        if lost <= 60:
+            return self.reid_thresh + 0.06
+
+        return self.reid_thresh + 0.10
 
     def update(self, frame, detections):
         """Trackers core logic"""
@@ -170,10 +241,36 @@ class ReIDTracker:
                     sim = trk.appearance_sim(feat)
                     cost_reid[i, j] = 1.0 - sim
 
-            reid_matches, unmatched_lost, unmatched_remain = match_by_cost(
-                cost_reid,
-                thresh=1.0 - self.reid_thresh,
-            )
+            # ========= enhancement start ==============
+            rows, cols = linear_sum_assignment(cost_reid)
+
+            reid_matches = []
+            used_lost = set()
+            used_remain = set()
+
+            for li, rdi in zip(rows, cols):
+                trk = self.lost_tracks[li]
+
+                sim = 1.0 - cost_reid[li, rdi]
+                thresh = self.reid_threshold_by_lost(trk.lost)
+
+                if sim < thresh:
+                    continue
+
+                reid_matches.append((li, rdi))
+                used_lost.add(li)
+                used_remain.add(rdi)
+
+            unmatched_lost = [
+                i for i in range(len(self.lost_tracks))
+                if i not in used_lost
+            ]
+
+            unmatched_remain = [
+                i for i in range(len(remain_dets))
+                if i not in used_remain
+            ]
+            # ========= enhancement end ==============
 
             recovered = []
 
@@ -204,6 +301,7 @@ class ReIDTracker:
                 track_id=self.next_id,
                 feat=feat,
                 bank_size=self.bank_size,
+                ema_alpha=self.ema_alpha, # ?? 
             )
 
             self.next_id += 1
