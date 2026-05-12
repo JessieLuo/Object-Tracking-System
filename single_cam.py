@@ -13,6 +13,7 @@ if __name__ == "__main__":
         model_path="models/yolo26n.mnn",
         conf=0.3,
         classes=[0],  # person class only
+        tracker="track/configs/trackers/botsort_reid.yaml"
     )
 
     writer = RtspWriter(

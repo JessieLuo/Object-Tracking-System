@@ -1,5 +1,5 @@
 """https://github.com/ANGJustinl/gcxl_2025/blob/6f595e8f868145d0cd744595a9001056d18262a5/Vision/NCNN_Yolo.py
-verified that ultralytics can running ncnn yolo directly"""
+verified that ultralytics can run ncnn yolo directly"""
 import numpy as np
 from ultralytics import YOLO
 

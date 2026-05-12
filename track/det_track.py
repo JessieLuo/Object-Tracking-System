@@ -3,10 +3,17 @@ from ultralytics import YOLO
 
 
 class YOLOTracker:
-    def __init__(self, model_path="", conf=0.3, classes=None):
+    def __init__(
+        self,
+        model_path="",
+        conf=0.3,
+        classes=None,
+        tracker="bytetrack.yaml",
+    ):
         self.model = YOLO(model_path)
         self.conf = conf
         self.classes = classes
+        self.tracker_cfg = tracker
 
     def infer(self, frame: np.ndarray):
         results = self.model.track(
@@ -14,7 +21,7 @@ class YOLOTracker:
             conf=self.conf,
             classes=self.classes,
             persist=True,
-            tracker="bytetrack.yaml",
+            tracker=self.tracker_cfg,
             verbose=False,
         )
 
@@ -28,7 +35,7 @@ class YOLOTracker:
         clses = r.boxes.cls.cpu().numpy()
 
         if r.boxes.id is None:
-            ids = -np.ones(len(boxes))
+            ids = -np.ones(len(boxes), dtype=np.float32)
         else:
             ids = r.boxes.id.cpu().numpy()
 
