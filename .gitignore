@@ -12,6 +12,7 @@ result/
 *.pt
 *.bin
 *.param
+*.pth
 
 *_ncnn_model/
 *_paddle_model/
