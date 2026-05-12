@@ -1,5 +1,3 @@
-
-
 from streaming.rtsp_pub import RtspWriter
 from streaming.subscribe import FrameSource
 from track.det_track import YOLOTracker

@@ -120,17 +120,22 @@ class FrameSource:
                         break
 
             except Exception:
+                try:
+                    if self.container is not None:
+                        self.container.close()
 
-                self.release()
+                except Exception:
+                    pass
+
+                self.container = None
+                self.stream = None
 
                 time.sleep(0.5)
 
                 try:
-
                     self.open()
 
                 except Exception:
-
                     time.sleep(1)
 
     # =====================================================
@@ -212,11 +217,11 @@ class FrameSource:
         self.running = False
 
         if self.thread is not None:
-
-            self.thread.join(timeout=1)
+            import threading
+            if threading.current_thread() != self.thread:
+                self.thread.join(timeout=1)
 
         if self.container is not None:
-
             try:
                 self.container.close()
 
