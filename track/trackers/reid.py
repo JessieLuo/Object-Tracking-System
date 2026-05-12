@@ -10,7 +10,7 @@ class OSNetReID:
     def __init__(
         self,
         weights_path,
-        model_name="osnet_x0_25",
+        model_name="osnet_x1_0",
         min_h=80,
         device="cpu",
     ):

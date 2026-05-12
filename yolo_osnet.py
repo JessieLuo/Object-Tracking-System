@@ -12,16 +12,21 @@ if __name__ == "__main__":
 
     detector = UltralyticsYoloDetector(
         "models/yolo26n_ncnn_model",
-        conf=0.4,
+        conf=0.1,
         classes=[0]
     )
 
     tracker = ReIDTracker(
         iou_thresh=0.3,
+        low_iou_thresh=0.2,
+        high_thresh=0.4,
+        low_thresh=0.1,
         reid_thresh=0.50,
-        max_lost=30,
-        reid_interval=5,
-        reid_weights="weights/osnet_x0_25_msmt17.pt"
+        max_lost=60,
+        reid_interval=3,
+        bank_size=30,
+        ema_alpha=0.9,
+        reid_weights="weights/osnet_x1_0_market.pth",
     )
 
     writer = RtspWriter(

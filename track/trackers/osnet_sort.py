@@ -2,10 +2,9 @@ import cv2
 import numpy as np
 
 from collections import deque
-from scipy.optimize import linear_sum_assignment
 
 from .kalman import KalmanBox
-from .matching import iou, match_by_cost
+from .matching import iou, match_by_cost, match_by_cost_dynamic_thresh
 from .reid import OSNetReID
 
 
@@ -120,9 +119,12 @@ class ReIDTracker:
         min_hits=1,
         reid_interval=5,
         bank_size=20,
-        ema_alpha=0.9, # ??
+        ema_alpha=0.9,  # ??
         reid_min_h=80,
-        reid_weights="weights/osnet_x0_25_market.pth"
+        reid_weights="weights/osnet_x0_25_market.pth",
+        high_thresh=0.4,
+        low_thresh=0.1,
+        low_iou_thresh=0.2,
     ):
         self.active_tracks = []
         self.lost_tracks = []
@@ -137,7 +139,11 @@ class ReIDTracker:
         self.min_hits = min_hits
         self.reid_interval = reid_interval
         self.bank_size = bank_size
-        self.ema_alpha = ema_alpha # ??
+        self.ema_alpha = ema_alpha  # ??
+
+        self.high_thresh = high_thresh
+        self.low_thresh = low_thresh
+        self.low_iou_thresh = low_iou_thresh
 
         self.reid = OSNetReID(
             weights_path=reid_weights,
@@ -157,11 +163,67 @@ class ReIDTracker:
 
         return self.reid_thresh + 0.10
 
+    def try_recover_id_for_new_track(self, new_trk, feat):
+        """?"""
+        if feat is None:
+            return False
+
+        best_lost = None
+        best_sim = -1.0
+
+        for lost_trk in self.lost_tracks:
+            sim = lost_trk.appearance_sim(feat)
+
+            if sim > best_sim:
+                best_sim = sim
+                best_lost = lost_trk
+
+        if best_lost is None:
+            return False
+
+        thresh = self.reid_threshold_by_lost(best_lost.lost)
+
+        if best_sim < thresh:
+            return False
+
+        # 回收旧 ID
+        new_trk.id = best_lost.id
+
+        # 继承旧 track 的外观记忆
+        new_trk.features = best_lost.features
+        new_trk.smooth_feat = best_lost.smooth_feat
+
+        # 再把当前 feat 加进去
+        new_trk.update_feature(feat)
+
+        # 从 lost_tracks 移除旧 track，避免重复恢复
+        self.lost_tracks = [
+            t for t in self.lost_tracks
+            if t.id != best_lost.id
+        ]
+
+        best_lost.state = "removed"
+        self.removed_tracks.append(best_lost)
+
+        return True
+
     def update(self, frame, detections):
         """Trackers core logic"""
         self.frame_id += 1
 
         detections = np.asarray(detections, dtype=np.float32)
+
+        # ==== split dets quality ======
+        if len(detections) > 0:
+            high_dets = detections[detections[:, 4] >= self.high_thresh]
+            low_dets = detections[
+                (detections[:, 4] >= self.low_thresh)
+                & (detections[:, 4] < self.high_thresh)
+            ]
+        else:
+            high_dets = detections
+            low_dets = detections
+        # ==== split dets end ======
 
         for trk in self.active_tracks:
             trk.predict()
@@ -185,25 +247,25 @@ class ReIDTracker:
         new_active = []
 
         # =====================================================
-        # 1. active tracks: IoU association
+        # 1. active tracks: high-score IoU association
         # =====================================================
 
         active = self.active_tracks
 
-        cost_iou = np.ones((len(active), len(detections)), dtype=np.float32)
+        cost_iou = np.ones((len(active), len(high_dets)), dtype=np.float32)
 
         for i, trk in enumerate(active):
-            for j, det in enumerate(detections):
+            for j, det in enumerate(high_dets):
                 cost_iou[i, j] = 1.0 - iou(trk.box, det[:4])
 
-        matches, unmatched_active, unmatched_dets = match_by_cost(
+        matches, unmatched_active, unmatched_high_dets = match_by_cost(
             cost_iou,
             thresh=1.0 - self.iou_thresh,
         )
 
         for ti, di in matches:
             trk = active[ti]
-            det = detections[di]
+            det = high_dets[di]
 
             feat = None
 
@@ -213,16 +275,54 @@ class ReIDTracker:
             trk.update(det[:4], det[4], det[5], feat)
             new_active.append(trk)
 
-        for ti in unmatched_active:
+        # =====================================================
+        # 1.5 unmatched active tracks: low-score IoU rescue
+        # =====================================================
+
+        still_unmatched_active = unmatched_active
+
+        if len(still_unmatched_active) > 0 and len(low_dets) > 0:
+            low_active = [active[i] for i in still_unmatched_active]
+
+            cost_low = np.ones(
+                (len(low_active), len(low_dets)), dtype=np.float32)
+
+            for i, trk in enumerate(low_active):
+                for j, det in enumerate(low_dets):
+                    cost_low[i, j] = 1.0 - iou(trk.box, det[:4])
+
+            low_matches, low_unmatched_active, _ = match_by_cost(
+                cost_low,
+                thresh=1.0 - self.low_iou_thresh,
+            )
+
+            recovered_active_ids = set()
+
+            for local_ti, di in low_matches:
+                trk = low_active[local_ti]
+                det = low_dets[di]
+
+                # 低分框只维持轨迹，不更新 ReID 特征
+                trk.update(det[:4], det[4], det[5], feat=None)
+                new_active.append(trk)
+
+                recovered_active_ids.add(still_unmatched_active[local_ti])
+
+            still_unmatched_active = [
+                still_unmatched_active[i]
+                for i in low_unmatched_active
+            ]
+
+        for ti in still_unmatched_active:
             trk = active[ti]
             trk.state = "lost"
             self.lost_tracks.append(trk)
 
+        remain_dets = [high_dets[i] for i in unmatched_high_dets]
+
         # =====================================================
         # 2. lost tracks: ReID association
         # =====================================================
-
-        remain_dets = [detections[i] for i in unmatched_dets]
 
         if len(self.lost_tracks) > 0 and len(remain_dets) > 0:
             det_feats = []
@@ -242,34 +342,12 @@ class ReIDTracker:
                     cost_reid[i, j] = 1.0 - sim
 
             # ========= enhancement start ==============
-            rows, cols = linear_sum_assignment(cost_reid)
-
-            reid_matches = []
-            used_lost = set()
-            used_remain = set()
-
-            for li, rdi in zip(rows, cols):
-                trk = self.lost_tracks[li]
-
-                sim = 1.0 - cost_reid[li, rdi]
-                thresh = self.reid_threshold_by_lost(trk.lost)
-
-                if sim < thresh:
-                    continue
-
-                reid_matches.append((li, rdi))
-                used_lost.add(li)
-                used_remain.add(rdi)
-
-            unmatched_lost = [
-                i for i in range(len(self.lost_tracks))
-                if i not in used_lost
-            ]
-
-            unmatched_remain = [
-                i for i in range(len(remain_dets))
-                if i not in used_remain
-            ]
+            reid_matches, unmatched_lost, unmatched_remain = match_by_cost_dynamic_thresh(
+                cost_reid,
+                row_thresh_fn=lambda li: 1.0 - self.reid_threshold_by_lost(
+                    self.lost_tracks[li].lost
+                ),
+            )
             # ========= enhancement end ==============
 
             recovered = []
@@ -301,10 +379,14 @@ class ReIDTracker:
                 track_id=self.next_id,
                 feat=feat,
                 bank_size=self.bank_size,
-                ema_alpha=self.ema_alpha, # ?? 
+                ema_alpha=self.ema_alpha,
             )
 
-            self.next_id += 1
+            recovered = self.try_recover_id_for_new_track(trk, feat)
+
+            if not recovered:
+                self.next_id += 1
+
             new_active.append(trk)
 
         self.active_tracks = new_active

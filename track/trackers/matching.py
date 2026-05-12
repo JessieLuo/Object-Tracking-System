@@ -75,3 +75,29 @@ def match_by_cost(cost, thresh):
         unmatched_cols.discard(c)
 
     return matches, list(unmatched_rows), list(unmatched_cols)
+
+
+def match_by_cost_dynamic_thresh(cost, row_thresh_fn):
+    """
+    row_thresh_fn(row_index) -> max allowed cost for this row
+    """
+    if cost.size == 0:
+        return [], list(range(cost.shape[0])), list(range(cost.shape[1]))
+
+    rows, cols = linear_sum_assignment(cost)
+
+    matches = []
+    unmatched_rows = set(range(cost.shape[0]))
+    unmatched_cols = set(range(cost.shape[1]))
+
+    for r, c in zip(rows, cols):
+        thresh = row_thresh_fn(r)
+
+        if cost[r, c] > thresh:
+            continue
+
+        matches.append((r, c))
+        unmatched_rows.discard(r)
+        unmatched_cols.discard(c)
+
+    return matches, list(unmatched_rows), list(unmatched_cols)
