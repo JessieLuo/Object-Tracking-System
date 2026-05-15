@@ -9,12 +9,13 @@ from streaming.subscribe import FrameSource
 from track.utils.fps import FpsMeter, draw_fps
 
 from track.detection.yolo_det import UltralyticsYoloDetector
+from track.detection.imx_zmq_adapter import IMXZmqAdapter
 from track.trackers.osnet_sort import ReIDTracker
 
 
-def load_detector(model):
+def load_detector(det_model):
     return UltralyticsYoloDetector(
-        model,
+        det_model,
         conf=0.1,
         classes=[0],
     )
@@ -65,9 +66,26 @@ def build_writer(args):
 
 def run(args):
 
-    source = FrameSource(args.source)
+    if args.detector == "yolo":
 
-    detector = load_detector(args.model)
+        if args.det_model is None:
+            raise ValueError("--det_model is required when --detector yolo")
+
+        source = FrameSource(args.source)
+        detector = load_detector(args.det_model)
+        frame_iter = source.frames()
+
+    elif args.detector == "imx_zmq":
+
+        source = IMXZmqAdapter(
+            addr=args.zmq_addr,
+            print_latency=True,
+        )
+        detector = None
+        frame_iter = None
+
+    else:
+        raise ValueError(f"unknown detector: {args.detector}")
 
     tracker = load_tracker(args.reid_model_name, args.reid_weights)
 
@@ -81,9 +99,20 @@ def run(args):
 
     try:
 
-        for frame in source.frames():
+        while True:
 
-            dets = detector.inference(frame)
+            if args.detector == "yolo":
+
+                frame = next(frame_iter)
+
+                dets = detector.inference(frame)
+
+            else:
+
+                frame, dets, det_valid = source.read()
+
+                if not det_valid:
+                    continue
 
             tracks, vis = tracker.update(frame, dets)
 
@@ -119,7 +148,11 @@ def run(args):
 
     finally:
 
-        source.release()
+        if args.detector == "yolo":
+            source.release()
+
+        elif args.detector == "imx_zmq":
+            source.close()
 
         writer.close()
 
@@ -130,13 +163,25 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
 
-    parser.add_argument("--source", required=True)
+    # If result not yolo-style no need sub streaming
+    parser.add_argument("--source", required=None)
 
     parser.add_argument("--output", required=True)
 
     parser.add_argument("--writer", default="rtsp")
 
-    parser.add_argument("--model", required=True)
+    parser.add_argument(
+        "--detector",
+        choices=["yolo", "imx_zmq"],
+        default="yolo",
+    )
+
+    parser.add_argument("--det_model", required=None)
+
+    parser.add_argument(
+        "--zmq_addr",
+        default="tcp://127.0.0.1:5555",
+    )
 
     parser.add_argument("--reid_model_name", required=True)
     
