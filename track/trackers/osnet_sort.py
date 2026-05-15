@@ -121,6 +121,7 @@ class ReIDTracker:
         bank_size=20,
         ema_alpha=0.9,
         reid_min_h=80,
+        reid_model_name="osnet_x0_25",
         reid_weights="weights/osnet_x0_25_msmt17.pt",
         high_thresh=0.4,
         low_thresh=0.1,
@@ -150,6 +151,7 @@ class ReIDTracker:
         self.reid_count = 0
 
         self.reid = OSNetReID(
+            model_name=reid_model_name,
             weights_path=reid_weights,
             min_h=reid_min_h,
         )
