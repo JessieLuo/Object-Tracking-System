@@ -1,7 +1,8 @@
 import json
-import zmq
 import time
+
 import numpy as np
+import zmq
 
 
 class IMXZmqAdapter:
@@ -15,10 +16,10 @@ class IMXZmqAdapter:
     """
 
     def __init__(
-        self,
-        addr="tcp://127.0.0.1:5555",
-        print_latency=True,
-        latency_log_interval=2.0,
+            self,
+            addr="tcp://127.0.0.1:5555",
+            print_latency=True,
+            latency_log_interval=2.0,
     ):
         self.addr = addr
         self.print_latency = print_latency
@@ -117,7 +118,6 @@ class IMXZmqAdapter:
             self.last_log_t = now
 
         return frame, dets, det_valid
-
 
     def close(self):
         self.sock.close()

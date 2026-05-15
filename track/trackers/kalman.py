@@ -3,7 +3,7 @@ import scipy.linalg
 
 from .matching import tlbr_to_xyah, xyah_to_tlbr
 
-EPS = 1e-6 # inherited from ultralytics
+EPS = 1e-6  # inherited from ultralytics
 
 
 class KalmanFilterXYAH:
@@ -40,9 +40,10 @@ class KalmanFilterXYAH:
             self._motion_mat[i, ndim + i] = dt
 
         # H: observation matrix
-        #    Map 8D Kalman state -> 4D detector measurement space.
+        # Map 8D Kalman state -> 4D detector measurement space.
         self._update_mat = np.eye(ndim, 2 * ndim, dtype=np.float32)
 
+        # initially acquire measurement
         measurement = tlbr_to_xyah(box).astype(np.float32)
         measurement[3] = max(float(measurement[3]), EPS)
 
@@ -53,7 +54,6 @@ class KalmanFilterXYAH:
     def _initiate(self, measurement):
         """
         Initialize a new track from one detector measurement.
-
         measurement:
             [cx, cy, a, h]
         """
@@ -135,11 +135,9 @@ class KalmanFilterXYAH:
         Project 8D state distribution to 4D measurement space.
 
         Returns:
-            projected_mean:
-                [cx, cy, a, h]
+                projected_mean [cx, cy, a, h]
 
-            projected_cov:
-                HPH.T + R
+                projected_cov HPH.T + R
         """
         h = max(float(self.mean[3]), EPS)
 
@@ -157,6 +155,7 @@ class KalmanFilterXYAH:
         # Detector observation uncertainty.
         innovation_cov = np.diag(std * std).astype(np.float32)
 
+        # H x
         projected_mean = np.dot(self._update_mat, self.mean).astype(np.float32)
 
         # HPH.T
@@ -298,9 +297,11 @@ class KalmanFilterXYAH:
     def _symmetrize(mat):
         return ((mat + mat.T) * 0.5).astype(np.float32)
 
-class DummyKalman:
-    """Ablation Test / Fake Kalman to 
+
+class _DummyKalman:
+    """Ablation Test / Fake Kalman to
     verify calculation pressure."""
+
     def __init__(self, box, *args, **kwargs):
         self._box = np.asarray(box, dtype=np.float32)
 
@@ -316,4 +317,3 @@ class DummyKalman:
 
     def box(self):
         return self._box
-    

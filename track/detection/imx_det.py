@@ -1,8 +1,8 @@
-import zmq
 import json
 import time
-import numpy as np
 
+import numpy as np
+import zmq
 from picamera2 import Picamera2
 from picamera2.devices import IMX500
 from picamera2.devices.imx500 import (
@@ -100,7 +100,7 @@ def parse_detections(metadata):
 
         if x2 <= x1 or y2 <= y1:
             continue
-        
+
         def accept_person_box(x1, y1, x2, y2, score, cls_id):
             if int(cls_id) != 0:
                 return False
@@ -129,10 +129,10 @@ def parse_detections(metadata):
                 return False
 
             return True
-        
+
         if not accept_person_box(x1, y1, x2, y2, score, cls):
             continue
-        
+
         objs.append({
             "x1": x1,
             "y1": y1,

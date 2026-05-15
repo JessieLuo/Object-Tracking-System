@@ -5,7 +5,6 @@ from ultralytics import YOLO
 
 
 class UltralyticsYoloDetector:
-    """detector only"""
     def __init__(self,
                  model_path: str,
                  conf: float = 0.3,
@@ -36,8 +35,8 @@ class UltralyticsYoloDetector:
         inp = self._load_input(img)
 
         results = self.model.predict(
-            inp, conf=self.conf, 
-            classes = self.classes,
+            inp, conf=self.conf,
+            classes=self.classes,
             verbose=False)
 
         r = results[0]

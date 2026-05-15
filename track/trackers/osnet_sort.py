@@ -1,7 +1,7 @@
+from collections import deque
+
 import cv2
 import numpy as np
-
-from collections import deque
 
 from .kalman import KalmanFilterXYAH
 from .matching import iou, match_by_cost, match_by_cost_dynamic_thresh
@@ -10,14 +10,14 @@ from .reid import OSNetReID
 
 class Track:
     def __init__(
-        self,
-        box,
-        score,
-        cls_id,
-        track_id,
-        feat=None,
-        bank_size=20,
-        ema_alpha=0.9,
+            self,
+            box,
+            score,
+            cls_id,
+            track_id,
+            feat=None,
+            bank_size=20,
+            ema_alpha=0.9,
     ):
         self.id = track_id
         self.score = float(score)
@@ -56,8 +56,8 @@ class Track:
             self.smooth_feat = feat.copy()
         else:
             self.smooth_feat = (
-                self.ema_alpha * self.smooth_feat
-                + (1.0 - self.ema_alpha) * feat
+                    self.ema_alpha * self.smooth_feat
+                    + (1.0 - self.ema_alpha) * feat
             )
 
             self.smooth_feat = self.smooth_feat / max(
@@ -112,21 +112,21 @@ class Track:
 
 class ReIDTracker:
     def __init__(
-        self,
-        iou_thresh=0.3,
-        reid_thresh=0.50,
-        max_lost=60,
-        min_hits=2,
-        reid_interval=15,
-        bank_size=20,
-        ema_alpha=0.9,
-        reid_min_h=80,
-        reid_model_name="osnet_x0_25",
-        reid_weights="weights/osnet_x0_25_msmt17.pt",
-        high_thresh=0.4,
-        low_thresh=0.1,
-        low_iou_thresh=0.2,
-        max_reid_per_frame=2,
+            self,
+            iou_thresh=0.3,
+            reid_thresh=0.50,
+            max_lost=60,
+            min_hits=2,
+            reid_interval=15,
+            bank_size=20,
+            ema_alpha=0.9,
+            reid_min_h=80,
+            reid_model_name="osnet_x0_25",
+            reid_weights="weights/osnet_x0_25_msmt17.pt",
+            high_thresh=0.4,
+            low_thresh=0.1,
+            low_iou_thresh=0.2,
+            max_reid_per_frame=2,
     ):
         self.active_tracks = []
         self.lost_tracks = []
@@ -161,7 +161,7 @@ class ReIDTracker:
         if self.reid_count >= self.max_reid_per_frame:
             return None
 
-        feat = self.reid.extract(frame, box) # ! Heavy Calculation
+        feat = self.reid.extract(frame, box)  # ! Heavy Calculation
         self.reid_count += 1
 
         return feat
@@ -196,7 +196,7 @@ class ReIDTracker:
             low_dets = detections[
                 (detections[:, 4] >= self.low_thresh)
                 & (detections[:, 4] < self.high_thresh)
-            ]
+                ]
         else:
             high_dets = np.empty((0, 6), dtype=np.float32)
             low_dets = np.empty((0, 6), dtype=np.float32)
@@ -338,7 +338,7 @@ class ReIDTracker:
                 match_by_cost_dynamic_thresh(
                     cost_reid,
                     row_thresh_fn=lambda li: 1.0
-                    - self.reid_threshold_by_lost(
+                                             - self.reid_threshold_by_lost(
                         self.lost_tracks[li].lost
                     ),
                 )

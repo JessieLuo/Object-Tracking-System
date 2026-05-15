@@ -12,31 +12,16 @@ torch.set_grad_enabled(False)
 
 
 class OSNetReID:
-    def __init__(
-        self,
-        weights_path,
-        model_name,
-        min_h=80,
-        device="cpu",
-    ):
+    def __init__(self, weights_path, model_name, min_h=80, device="cpu", ):
         self.device = device
         self.min_h = min_h
 
         if not os.path.isfile(weights_path):
-            raise FileNotFoundError(
-                f"ReID weights not found: {weights_path}"
-            )
+            raise FileNotFoundError(f"ReID weights not found: {weights_path}")
 
-        self.model = torchreid.models.build_model(
-            name=model_name,
-            num_classes=1000,
-            pretrained=False,
-        )
+        self.model = torchreid.models.build_model(name=model_name, num_classes=1000, pretrained=False, )
 
-        torchreid.utils.load_pretrained_weights(
-            self.model,
-            weights_path,
-        )
+        torchreid.utils.load_pretrained_weights(self.model, weights_path, )
 
         self.model.eval()
         self.model.to(self.device)
@@ -78,12 +63,7 @@ class OSNetReID:
 
         tensor = torch.from_numpy(crop)
 
-        tensor = (
-            tensor
-            .permute(2, 0, 1)
-            .contiguous()
-            .unsqueeze(0)
-        )
+        tensor = (tensor.permute(2, 0, 1).contiguous().unsqueeze(0))
 
         prep_ms = (time.time() - t0) * 1000
 

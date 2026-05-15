@@ -29,7 +29,7 @@ def tlbr_to_xyah(box):
 
     cx = x1 + w / 2
     cy = y1 + h / 2
-    a = w / h # box size ratio
+    a = w / h  # box size ratio
 
     return np.array([cx, cy, a, h], dtype=np.float32)
 

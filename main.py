@@ -1,60 +1,33 @@
-import time
 import argparse
+import time
+
 import cv2
 
 from streaming.rtsp_pub import RtspWriter
-from streaming.vid_pub import VideoFileWriter
 from streaming.subscribe import FrameSource
-
-from track.utils.fps import FpsMeter, draw_fps
-
-from track.detection.yolo_det import UltralyticsYoloDetector
+from streaming.vid_pub import VideoFileWriter
 from track.detection.imx_zmq_adapter import IMXZmqAdapter
+from track.detection.yolo_det import UltralyticsYoloDetector
 from track.trackers.osnet_sort import ReIDTracker
+from track.utils.fps import FpsMeter, draw_fps
 
 
 def load_detector(det_model):
-    return UltralyticsYoloDetector(
-        det_model,
-        conf=0.1,
-        classes=[0],
-    )
+    return UltralyticsYoloDetector(det_model, conf=0.1, classes=[0], )
 
 
 def load_tracker(model_name, weights):
-    return ReIDTracker(
-        iou_thresh=0.3,
-        low_iou_thresh=0.2,
-        high_thresh=0.4,
-        low_thresh=0.1,
-        reid_thresh=0.50,
-        max_lost=60,
-        min_hits=2,
-        reid_interval=15,
-        bank_size=30,
-        ema_alpha=0.9,
-        reid_model_name=model_name,
-        reid_weights=weights,
-    )
+    return ReIDTracker(iou_thresh=0.3, low_iou_thresh=0.2, high_thresh=0.4, low_thresh=0.1, reid_thresh=0.50,
+        max_lost=60, min_hits=2, reid_interval=15, bank_size=30, ema_alpha=0.9, reid_model_name=model_name,
+        reid_weights=weights, )
 
 
 def build_writer(args):
-
     if args.writer == "rtsp":
-
-        writer = RtspWriter(
-            url=args.output,
-            size_wh=(args.width, args.height),
-            fps=args.fps,
-        )
+        writer = RtspWriter(url=args.output, size_wh=(args.width, args.height), fps=args.fps, )
 
     elif args.writer == "video":
-
-        writer = VideoFileWriter(
-            path=args.output,
-            size_wh=(args.width, args.height),
-            fps=args.fps,
-        )
+        writer = VideoFileWriter(path=args.output, size_wh=(args.width, args.height), fps=args.fps, )
 
     else:
         raise ValueError(f"unknown writer: {args.writer}")
@@ -65,9 +38,7 @@ def build_writer(args):
 
 
 def run(args):
-
     if args.detector == "yolo":
-
         if args.det_model is None:
             raise ValueError("--det_model is required when --detector yolo")
 
@@ -76,11 +47,7 @@ def run(args):
         frame_iter = source.frames()
 
     elif args.detector == "imx_zmq":
-
-        source = IMXZmqAdapter(
-            addr=args.zmq_addr,
-            print_latency=True,
-        )
+        source = IMXZmqAdapter(addr=args.zmq_addr, print_latency=True, )
         detector = None
         frame_iter = None
 
@@ -100,17 +67,12 @@ def run(args):
     try:
 
         while True:
-
             if args.detector == "yolo":
-
                 frame = next(frame_iter)
-
                 dets = detector.inference(frame)
 
             else:
-
                 frame, dets, det_valid = source.read()
-
                 if not det_valid:
                     continue
 
@@ -127,7 +89,6 @@ def run(args):
             now = time.perf_counter()
 
             if now >= next_write_t:
-
                 writer.write(vis)
 
                 next_write_t += out_interval
@@ -136,31 +97,24 @@ def run(args):
                     next_write_t = now + out_interval
 
             if args.show:
-
                 cv2.imshow("track", vis)
-
                 if cv2.waitKey(1) & 0xFF == 27:
                     break
 
     except KeyboardInterrupt:
-
         print("\nexiting...")
 
     finally:
-
         if args.detector == "yolo":
             source.release()
-
         elif args.detector == "imx_zmq":
             source.close()
 
         writer.close()
-
         cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":
-
     parser = argparse.ArgumentParser()
 
     # If result not yolo-style no need sub streaming
@@ -170,21 +124,14 @@ if __name__ == "__main__":
 
     parser.add_argument("--writer", default="rtsp")
 
-    parser.add_argument(
-        "--detector",
-        choices=["yolo", "imx_zmq"],
-        default="yolo",
-    )
+    parser.add_argument("--detector", choices=["yolo", "imx_zmq"], default="yolo", )
 
     parser.add_argument("--det_model", required=None)
 
-    parser.add_argument(
-        "--zmq_addr",
-        default="tcp://127.0.0.1:5555",
-    )
+    parser.add_argument("--zmq_addr", default="tcp://127.0.0.1:5555", )
 
     parser.add_argument("--reid_model_name", required=True)
-    
+
     parser.add_argument("--reid_weights", required=True)
 
     parser.add_argument("--width", type=int, default=320)
