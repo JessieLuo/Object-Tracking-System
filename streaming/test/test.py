@@ -4,10 +4,10 @@ import time
 from queue import Queue, Full, Empty
 from threading import Thread
 
-from subscribe import FrameSource
-from rtsp_pub import RtspWriter
-from vid_pub import VideoFileWriter
-from MOT_Replica.streaming.test.cvworker import CvWorker
+from streaming.subscribe import FrameSource
+from streaming.rtsp_pub import RtspWriter
+from streaming.vid_pub import VideoFileWriter
+from streaming.test.cvworker import CvWorker
 
 
 STOP = object()
@@ -115,7 +115,7 @@ def main():
         except KeyboardInterrupt:
             pass
 
-    # ========= CASE 2: 本地文件（伪实时）=========
+    # ========= CASE 2: 本地文件 =========
     else:
         interval = 1.0 / fps if fps > 0 else 0
         next_ts = time.time()

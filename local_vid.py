@@ -35,7 +35,7 @@ if __name__ == "__main__":
     writer = VideoFileWriter(
         path="track/data/det.mp4",
         size_wh=(640, 480),
-        fps=8,
+        fps=25,
     )
     writer.open()
 

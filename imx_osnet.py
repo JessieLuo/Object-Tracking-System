@@ -1,21 +1,17 @@
 import time
 
 from streaming.rtsp_pub import RtspWriter
-from streaming.subscribe import FrameSource
 
 from track.utils.fps import FpsMeter, draw_fps
 
-from track.detection.yolo_det import UltralyticsYoloDetector
+from track.detection.imx_zmq_adapter import IMXZmqAdapter
 from track.trackers.osnet_sort import ReIDTracker
 
 
 if __name__ == "__main__":
-    source = FrameSource("rtsp://127.0.0.1:8554/cam0")
-
-    detector = UltralyticsYoloDetector(
-        "models/yolo26n.mnn",
-        conf=0.1,
-        classes=[0],
+    source = IMXZmqAdapter(
+        addr="tcp://127.0.0.1:5555",
+        print_latency=True,
     )
 
     tracker = ReIDTracker(
@@ -25,13 +21,14 @@ if __name__ == "__main__":
         low_thresh=0.1,
         reid_thresh=0.50,
         max_lost=60,
+        min_hits=2,
         reid_interval=15,
         bank_size=30,
         ema_alpha=0.9,
         reid_weights="weights/osnet_x0_25_msmt17.pt",
     )
 
-    OUT_FPS = 25.0
+    OUT_FPS = 26.0
     OUT_INTERVAL = 1.0 / OUT_FPS
 
     writer = RtspWriter(
@@ -48,10 +45,14 @@ if __name__ == "__main__":
     next_write_t = time.perf_counter()
 
     try:
-        for frame in source.frames():
-            dets = detector.inference(frame)
+        while True:
+            frame, dets, det_valid = source.read()
+            if not det_valid:
+                continue
             tracks, vis = tracker.update(frame, dets)
-            print(tracks[:, :5])
+
+            if len(tracks):
+                print(tracks[:, :5])
 
             fps = fps_meter.tick()
             if fps is not None:
@@ -64,10 +65,8 @@ if __name__ == "__main__":
             if now >= next_write_t:
                 writer.write(last_vis)
 
-                # 固定输出节奏，不跟随处理耗时乱跳
                 next_write_t += OUT_INTERVAL
 
-                # 如果处理太慢，直接追到当前时间附近，避免越积越延迟
                 if next_write_t < now - OUT_INTERVAL:
                     next_write_t = now + OUT_INTERVAL
 
@@ -75,5 +74,5 @@ if __name__ == "__main__":
         print("\nexiting...")
 
     finally:
-        source.release()
+        source.close()
         writer.close()
