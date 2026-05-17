@@ -8,37 +8,78 @@ Therefore, we adopt the official Picamera2 toolkit rather than manually managing
 This is why the pipeline cannot be simplified into a shell script
 like those used for macOS cameras or standard USB webcams."""
 import time
+import argparse
 
 from picamera2 import Picamera2
 from picamera2.encoders import H264Encoder
 from picamera2.outputs import FfmpegOutput
 
-#WIDTH, HEIGHT = 640, 480 # calibration
-WIDTH, HEIGHT = 320, 320 # detection sample
+from libcamera import Transform
+
+# WIDTH, HEIGHT = 640, 480
+WIDTH, HEIGHT = 320, 320
+
 FPS = 30
 BITRATE = 3_000_000
 RTSP_URL = "rtsp://127.0.0.1:8554/cam0"
 
+# --------------------------------------------------
+# argparse
+# default = False
+# user must explicitly enable flips
+# --------------------------------------------------
+parser = argparse.ArgumentParser()
+
+parser.add_argument(
+    "--hflip",
+    action="store_true",
+    help="Enable horizontal flip"
+)
+
+parser.add_argument(
+    "--vflip",
+    action="store_true",
+    help="Enable vertical flip"
+)
+
+args = parser.parse_args()
+
 picam2 = Picamera2()
 
-# Configure video stream
 config = picam2.create_video_configuration(
-    main={"size": (WIDTH, HEIGHT), "format": "YUV420"},
-    controls={"FrameRate": FPS}
+    main={
+        "size": (WIDTH, HEIGHT),
+        "format": "YUV420",
+    },
+    controls={
+        "FrameRate": FPS,
+    },
+    transform=Transform(
+        hflip=args.hflip,
+        vflip=args.vflip,
+    )
 )
+
 picam2.configure(config)
 
-# ---- Use simple Libav H.264 encoder (compatible with all backends) ----
 encoder = H264Encoder(bitrate=BITRATE)
 
-# ffmpeg output to RTSP
-ffout = FfmpegOutput(f"-f rtsp -rtsp_transport tcp {RTSP_URL}", audio=False)
+ffout = FfmpegOutput(
+    f"-f rtsp -rtsp_transport tcp {RTSP_URL}",
+    audio=False
+)
 
 picam2.start_recording(encoder, ffout)
-print(f"Streaming {WIDTH}x{HEIGHT}@{FPS} to {RTSP_URL} (Ctrl+C to stop)")
+
+print(
+    f"Streaming {WIDTH}x{HEIGHT}@{FPS} "
+    f"hflip={args.hflip} "
+    f"vflip={args.vflip}"
+)
 
 try:
     while True:
         time.sleep(1)
+
 except KeyboardInterrupt:
     picam2.stop_recording()

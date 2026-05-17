@@ -1,1 +1,1 @@
-python streaming/script/picam.py
+python streaming/script/picam.py --vflip --hflip

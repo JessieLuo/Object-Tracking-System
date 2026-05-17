@@ -3,7 +3,7 @@ ffmpeg \
   -input_format yuyv422 \
   -video_size 320x320 \
   -framerate 15 \
-  -i /dev/video0 \
+  -i /dev/video8 \
   -c:v libx264 \
   -preset ultrafast \
   -tune zerolatency \
