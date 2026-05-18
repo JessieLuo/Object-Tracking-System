@@ -13,12 +13,12 @@ class Tracker:
             association,
             max_lost=60,
             min_hits=2,
-            appearance_interval=15,
+            appearance_interval=5,
             bank_size=30,
             ema_alpha=0.9,
             high_thresh=0.4,
             low_thresh=0.1,
-            max_appearance_per_frame=2,
+            max_appearance_per_frame=4,
     ):
         self.motion_factory = motion_factory
         self.appearance_model = appearance_model
@@ -74,19 +74,21 @@ class Tracker:
 
         return self.appearance_model.extract(frame, box)
 
-    def build_high_det_features(self, frame, high_dets):
+    def build_high_det_features(self, frame, high_dets, force=False):
         if self.appearance_model is None:
             return None
 
         det_feats = [None for _ in range(len(high_dets))]
 
-        if self.frame_id % self.appearance_interval != 0:
+        if not force and self.frame_id % self.appearance_interval != 0:
             return det_feats
+
+        max_extract = len(high_dets) if force else self.max_appearance_per_frame
 
         extracted = 0
 
         for i, det in enumerate(high_dets):
-            if extracted >= self.max_appearance_per_frame:
+            if extracted >= max_extract:
                 break
 
             feat = self.extract_feature(frame, det[:4])
@@ -97,6 +99,31 @@ class Tracker:
 
         return det_feats
 
+    def build_det_features(self, frame, dets, force=False):
+        if self.appearance_model is None:
+            return None
+
+        det_feats = [None for _ in range(len(dets))]
+
+        if not force and self.frame_id % self.appearance_interval != 0:
+            return det_feats
+
+        max_extract = len(dets) if force else self.max_appearance_per_frame
+
+        extracted = 0
+
+        for i, det in enumerate(dets):
+            if extracted >= max_extract:
+                break
+
+            feat = self.extract_feature(frame, det[:4])
+            det_feats[i] = feat
+
+            if feat is not None:
+                extracted += 1
+
+        return det_feats
+    
     def create_track(self, det, feat=None):
         box = det[:4]
         score = det[4]
@@ -183,6 +210,34 @@ class Tracker:
             if i not in recovered_lost_ids
         ]
 
+    def recover_lost_tracks_from_low(self, result, low_dets, low_det_feats):
+        recovered_lost_ids = set()
+
+        for lost_i, det_i in result.low_recovered_matches:
+            track = self.lost_tracks[lost_i]
+            det = low_dets[det_i]
+
+            track.update(
+                box=det[:4],
+                score=det[4],
+                cls_id=det[5] if len(det) > 5 else 0,
+            )
+
+            if low_det_feats is not None and low_det_feats[det_i] is not None:
+                self.appearance_store.update(
+                    track.id,
+                    low_det_feats[det_i],
+                )
+
+            self.active_tracks.append(track)
+            recovered_lost_ids.add(lost_i)
+
+        self.lost_tracks = [
+            track
+            for i, track in enumerate(self.lost_tracks)
+            if i not in recovered_lost_ids
+        ]
+
     def move_unmatched_active_to_lost(self, unmatched_active_ids):
         unmatched_set = set(unmatched_active_ids)
 
@@ -201,12 +256,15 @@ class Tracker:
 
         self.lost_tracks.extend(moved_to_lost)
 
-    def create_new_tracks(self, high_dets, high_det_feats, unmatched_high_ids):
+    def create_new_tracks(self, frame, high_dets, high_det_feats, unmatched_high_ids):
         for det_i in unmatched_high_ids:
             feat = None
 
             if high_det_feats is not None:
                 feat = high_det_feats[det_i]
+
+            if feat is None:
+                feat = self.extract_feature(frame, high_dets[det_i][:4])
 
             track = self.create_track(high_dets[det_i], feat=feat)
             self.active_tracks.append(track)
@@ -287,7 +345,17 @@ class Tracker:
 
         self.predict_tracks()
 
-        high_det_feats = self.build_high_det_features(frame, high_dets)
+        force_reid = len(self.lost_tracks) > 0
+        high_det_feats = self.build_det_features(
+            frame,
+            high_dets,
+            force=force_reid,
+        )
+        low_det_feats = self.build_det_features(
+            frame,
+            low_dets,
+            force=force_reid,
+        )
 
         result = self.association.associate(
             active_tracks=self.active_tracks,
@@ -295,14 +363,17 @@ class Tracker:
             high_dets=high_dets,
             low_dets=low_dets,
             high_det_feats=high_det_feats,
+            low_det_feats=low_det_feats,
             appearance_store=self.appearance_store,
         )
 
         self.update_active_matches(result, high_dets, high_det_feats)
         self.update_low_matches(result, low_dets)
         self.recover_lost_tracks(result, high_dets, high_det_feats)
+        self.recover_lost_tracks_from_low(result, low_dets, low_det_feats)
         self.move_unmatched_active_to_lost(result.unmatched_active_ids)
         self.create_new_tracks(
+            frame,
             high_dets,
             high_det_feats,
             result.unmatched_high_ids,

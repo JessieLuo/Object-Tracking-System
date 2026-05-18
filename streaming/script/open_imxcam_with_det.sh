@@ -1,1 +1,1 @@
-python track/detection/imx_det.py
+python detection/imx_det.py

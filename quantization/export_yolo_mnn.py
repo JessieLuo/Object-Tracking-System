@@ -4,7 +4,7 @@ from ultralytics import YOLO
 model = YOLO("../models/yolo26n.pt")
 
 # Export the model to MNN format
-model.export(format="mnn", imgsz=(640,480), project="../models")
+model.export(format="mnn", imgsz=320, project="../models")
 
 # Load the exported MNN model
 mnn_model = YOLO("../models/yolo26n.mnn", task="detect")

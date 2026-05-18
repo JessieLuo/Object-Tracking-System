@@ -74,6 +74,33 @@ def match_by_cost_dynamic_thresh(cost, row_thresh_fn):
     return matches, list(unmatched_rows), list(unmatched_cols)
 
 
+def center_distance_cost(tracks, detections):
+    """
+    Cost based on normalized center distance.
+
+    Smaller is better.
+    cost roughly means: center distance / track height.
+    """
+    cost = np.ones((len(tracks), len(detections)), dtype=np.float32)
+
+    for i, trk in enumerate(tracks):
+        tx1, ty1, tx2, ty2 = trk.box
+        tcx = 0.5 * (tx1 + tx2)
+        tcy = 0.5 * (ty1 + ty2)
+        th = max(ty2 - ty1, 1.0)
+
+        for j, det in enumerate(detections):
+            x1, y1, x2, y2 = det[:4]
+            dcx = 0.5 * (x1 + x2)
+            dcy = 0.5 * (y1 + y2)
+
+            dist = np.sqrt((tcx - dcx) ** 2 + (tcy - dcy) ** 2)
+
+            cost[i, j] = dist / th
+
+    return cost
+
+
 def build_iou_cost(tracks, detections):
     """Matching object by bboxes IoU value"""
     cost = np.ones((len(tracks), len(detections)), dtype=np.float32)

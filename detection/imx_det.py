@@ -167,6 +167,8 @@ def main():
 
     picam2 = Picamera2(imx500.camera_num)
 
+
+    from libcamera import Transform
     config = picam2.create_preview_configuration(
         main={
             "size": (WIDTH, HEIGHT),
@@ -175,6 +177,10 @@ def main():
         controls={
             "FrameRate": intrinsics.inference_rate,
         },
+        transform=Transform(
+            hflip=True,
+            vflip=True,
+        ),
         buffer_count=4,
     )
 

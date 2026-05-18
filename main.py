@@ -13,6 +13,7 @@ from tracking.association.strategy import MotionAppearanceAssociation
 from tracking.motion.kalman import KalmanFilterXYAH
 from tracking.tracker import Tracker
 from tracking.utils.fps import FpsMeter, draw_fps
+from tracking.utils.boxes import nms_dets
 
 
 def load_detector(det_model):
@@ -29,7 +30,7 @@ def load_tracker(model_name, weights):
     association = MotionAppearanceAssociation(
         iou_thresh=0.3,
         low_iou_thresh=0.2,
-        appearance_thresh=0.50,
+        appearance_thresh=0.42,
         use_low_score_rescue=True,
         lost_association="appearance",
     )
@@ -96,6 +97,7 @@ def run(args):
             if args.detector == "yolo":
                 frame = next(frame_iter)
                 dets = detector.inference(frame)
+                dets = nms_dets(dets, iou_thr=0.5)
 
             else:
                 frame, dets, det_valid = source.read()

@@ -116,3 +116,26 @@ def xyah_to_tlbr(x):
         ],
         dtype=np.float32,
     )
+
+
+def nms_dets(
+        dets: np.ndarray,
+        iou_thr: float = 0.5,
+) -> np.ndarray:
+    """
+    Apply NMS to detection array.
+
+    dets:
+        (N, 6) = [x1, y1, x2, y2, score, cls]
+    """
+    if dets is None or len(dets) == 0:
+        return np.empty((0, 6), dtype=np.float32)
+
+    dets = np.asarray(dets, dtype=np.float32)
+
+    boxes = dets[:, :4]
+    scores = dets[:, 4]
+
+    keep = nms(boxes, scores, iou_thr=iou_thr)
+
+    return dets[keep]
