@@ -2,7 +2,7 @@ python main.py \
   --detector yolo \
   --source rtsp://127.0.0.1:8554/maccam \
   --output rtsp://127.0.0.1:8554/det \
-  --width 640 --height 640 \
+  --width 640 --height 480 \
   --det_model models/yolo26n.mnn \
   --reid_model_name osnet_x1_0 \
   --reid_weights weights/osnet_x1_0_market.pth

@@ -68,3 +68,51 @@ def nms(
         order = order[inds + 1]
 
     return np.array(keep, dtype=np.int32)
+
+
+def tlbr_to_xyah(box):
+    """
+    Convert a bounding box from TLBR format to XYAH format.
+    tlbr:
+        [x1, y1, x2, y2]
+        where:
+            (x1, y1) = top-left corner
+            (x2, y2) = bottom-right corner
+    XYAH:
+        [cx, cy, a, h]
+        where:
+            cx = box center x-coordinate
+            cy = box center y-coordinate
+            a  = aspect ratio (width / height)
+            h  = box height
+
+    This representation is commonly used in Kalman-filter-based tracking
+    because center position and box scale evolve more smoothly over time
+    than raw corner coordinates.
+    """
+    x1, y1, x2, y2 = box
+
+    w = max(1.0, x2 - x1)
+    h = max(1.0, y2 - y1)
+
+    cx = x1 + w / 2
+    cy = y1 + h / 2
+    a = w / h  # box size ratio
+
+    return np.array([cx, cy, a, h], dtype=np.float32)
+
+
+def xyah_to_tlbr(x):
+    cx, cy, a, h = x[:4]
+
+    w = a * h
+
+    return np.array(
+        [
+            cx - w / 2,
+            cy - h / 2,
+            cx + w / 2,
+            cy + h / 2,
+        ],
+        dtype=np.float32,
+    )

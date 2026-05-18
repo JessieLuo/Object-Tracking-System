@@ -19,8 +19,7 @@ MODEL = (
     "imx500_network_ssd_mobilenetv2_fpnlite_320x320_pp.rpk"
 )
 
-# IMX端不要用高阈值。
-# 低分候选框也要发给 tracker，让 tracker 自己用 high/low/reid 处理。
+# Reduce threshold so that send low score to tracker
 POST_CONF = 0.50
 SEND_THRESHOLD = 0.15
 
@@ -55,7 +54,6 @@ def parse_detections(metadata):
         )[0]
 
         from picamera2.devices.imx500.postprocess import scale_boxes
-
         boxes = scale_boxes(
             boxes,
             1,

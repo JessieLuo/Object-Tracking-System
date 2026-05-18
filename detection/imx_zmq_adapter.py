@@ -28,7 +28,6 @@ class IMXZmqAdapter:
         self.ctx = zmq.Context.instance()
         self.sock = self.ctx.socket(zmq.SUB)
 
-        # 关键：接收队列小，避免积压
         self.sock.setsockopt(zmq.RCVHWM, 1)
         self.sock.setsockopt(zmq.LINGER, 0)
         self.sock.setsockopt_string(zmq.SUBSCRIBE, "")

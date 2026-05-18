@@ -2,8 +2,8 @@ import time
 from queue import Queue
 from threading import Thread
 
-from subscribe import FrameSource
-from rtsp_pub import RtspWriter
+from streaming.subscribe import FrameSource
+from streaming.rtsp_pub import RtspWriter
 
 
 q = Queue(maxsize=1)

@@ -2,54 +2,6 @@ import numpy as np
 from scipy.optimize import linear_sum_assignment
 
 
-def tlbr_to_xyah(box):
-    """
-    Convert a bounding box from TLBR format to XYAH format.
-    tlbr:
-        [x1, y1, x2, y2]
-        where:
-            (x1, y1) = top-left corner
-            (x2, y2) = bottom-right corner
-    XYAH:
-        [cx, cy, a, h]
-        where:
-            cx = box center x-coordinate
-            cy = box center y-coordinate
-            a  = aspect ratio (width / height)
-            h  = box height
-
-    This representation is commonly used in Kalman-filter-based tracking
-    because center position and box scale evolve more smoothly over time
-    than raw corner coordinates.
-    """
-    x1, y1, x2, y2 = box
-
-    w = max(1.0, x2 - x1)
-    h = max(1.0, y2 - y1)
-
-    cx = x1 + w / 2
-    cy = y1 + h / 2
-    a = w / h  # box size ratio
-
-    return np.array([cx, cy, a, h], dtype=np.float32)
-
-
-def xyah_to_tlbr(x):
-    cx, cy, a, h = x[:4]
-
-    w = a * h
-
-    return np.array(
-        [
-            cx - w / 2,
-            cy - h / 2,
-            cx + w / 2,
-            cy + h / 2,
-        ],
-        dtype=np.float32,
-    )
-
-
 def iou(a, b):
     ax1, ay1, ax2, ay2 = a
     bx1, by1, bx2, by2 = b
@@ -120,3 +72,30 @@ def match_by_cost_dynamic_thresh(cost, row_thresh_fn):
         unmatched_cols.discard(c)
 
     return matches, list(unmatched_rows), list(unmatched_cols)
+
+
+def build_iou_cost(tracks, detections):
+    """Matching object by bboxes IoU value"""
+    cost = np.ones((len(tracks), len(detections)), dtype=np.float32)
+
+    for i, trk in enumerate(tracks):
+        for j, det in enumerate(detections):
+            cost[i, j] = 1.0 - iou(trk.box, det[:4])
+
+    return cost
+
+
+def build_appearance_cost(tracks, det_feats, appearance_store):
+    """Build appearance cost by track_id -> appearance memory."""
+    cost = np.ones((len(tracks), len(det_feats)), dtype=np.float32)
+
+    for i, trk in enumerate(tracks):
+        for j, feat in enumerate(det_feats):
+            sim = appearance_store.similarity(trk.id, feat)
+
+            if sim < 0:
+                cost[i, j] = 1.0
+            else:
+                cost[i, j] = 1.0 - sim
+
+    return cost

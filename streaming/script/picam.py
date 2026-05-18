@@ -7,14 +7,13 @@ may trigger pixel format parsing errors without clear causes.
 Therefore, we adopt the official Picamera2 toolkit rather than manually managing FFmpeg.
 This is why the pipeline cannot be simplified into a shell script
 like those used for macOS cameras or standard USB webcams."""
-import time
 import argparse
+import time
 
+from libcamera import Transform
 from picamera2 import Picamera2
 from picamera2.encoders import H264Encoder
 from picamera2.outputs import FfmpegOutput
-
-from libcamera import Transform
 
 # WIDTH, HEIGHT = 640, 480
 WIDTH, HEIGHT = 320, 320
@@ -23,12 +22,9 @@ FPS = 30
 BITRATE = 3_000_000
 RTSP_URL = "rtsp://127.0.0.1:8554/cam0"
 
-# --------------------------------------------------
-# argparse
-# default = False
-# user must explicitly enable flips
-# --------------------------------------------------
 parser = argparse.ArgumentParser()
+
+# Handling cam reversed scenario
 
 parser.add_argument(
     "--hflip",

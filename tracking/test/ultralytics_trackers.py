@@ -3,12 +3,14 @@ from ultralytics import YOLO
 
 
 class YOLOTracker:
+    """Support ultralytics YOLO tracker only (ByteTrack + BoT-Track)"""
+
     def __init__(
-        self,
-        model_path="",
-        conf=0.3,
-        classes=None,
-        tracker="bytetrack.yaml",
+            self,
+            model_path="",
+            conf=0.3,
+            classes=None,
+            tracker="bytetrack.yaml",
     ):
         self.model = YOLO(model_path)
         self.conf = conf

@@ -1,9 +1,9 @@
-from subscribe import FrameSource
-from vid_pub import VideoFileWriter
+from streaming.subscribe import FrameSource
+from streaming.vid_pub import VideoFileWriter
 
 
 def main():
-    src = "data/test_640.mp4"
+    src = "streaming/data/test_640.mp4"
     source = FrameSource(src)
 
     writer = VideoFileWriter("out.mp4", (640, 480), 30)

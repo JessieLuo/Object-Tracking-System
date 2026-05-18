@@ -1,10 +1,8 @@
-import time
 import threading
-
+import time
 from typing import Optional, Tuple
 
 import av
-import numpy as np
 
 
 class FrameSource:

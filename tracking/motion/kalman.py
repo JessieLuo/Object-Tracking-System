@@ -1,7 +1,7 @@
 import numpy as np
 import scipy.linalg
 
-from .matching import tlbr_to_xyah, xyah_to_tlbr
+from tracking.utils.boxes import tlbr_to_xyah, xyah_to_tlbr
 
 EPS = 1e-6  # inherited from ultralytics
 
@@ -215,8 +215,8 @@ class KalmanFilterXYAH:
         self.mean = (
                 self.mean + np.dot(innovation, kalman_gain.T)
         ).astype(np.float32)
-        # P = P' - K@S@K.T
-        # TODO: why not P = (I - K@H)P' OR P = P' - P'@K@H
+        # Joseph stabilized form
+        # P = (I-K@H)P'(I-K@H).T + K@R@K.T \rightarrow P' - K@S@K.T
         self.covariance = (
                 self.covariance
                 - np.linalg.multi_dot((kalman_gain, projected_cov, kalman_gain.T))
@@ -299,8 +299,7 @@ class KalmanFilterXYAH:
 
 
 class _DummyKalman:
-    """Ablation Test / Fake Kalman to
-    verify calculation pressure."""
+    """Ablation Test / Fake Kalman to verify kalman efficiency."""
 
     def __init__(self, box, *args, **kwargs):
         self._box = np.asarray(box, dtype=np.float32)

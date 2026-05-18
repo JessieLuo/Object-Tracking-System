@@ -1,10 +1,10 @@
 import cv2
 import time
-from MOT_Replica.track.detection.yolo_det import UltralyticsYoloDetector
+from detection.yolo_det import UltralyticsYoloDetector
 
 if __name__ == "__main__":
-    img_path = "track/data/00001355.png"
-    out_path = "track/data/00001355_det.jpg"
+    img_path = "detection/data/00001355.png"
+    out_path = "detection/data/00001355_det.jpg"
 
     detector = UltralyticsYoloDetector(
         "models/yolo26n.mnn",

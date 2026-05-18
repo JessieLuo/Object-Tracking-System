@@ -3,13 +3,16 @@ import time
 
 import cv2
 
+from detection.imx_zmq_adapter import IMXZmqAdapter
+from detection.yolo_det import UltralyticsYoloDetector
 from streaming.rtsp_pub import RtspWriter
 from streaming.subscribe import FrameSource
 from streaming.vid_pub import VideoFileWriter
-from track.detection.imx_zmq_adapter import IMXZmqAdapter
-from track.detection.yolo_det import UltralyticsYoloDetector
-from track.trackers.osnet_sort import ReIDTracker
-from track.utils.fps import FpsMeter, draw_fps
+from tracking.appearance.osnet import OSNetReID
+from tracking.association.strategy import MotionAppearanceAssociation
+from tracking.motion.kalman import KalmanFilterXYAH
+from tracking.tracker import Tracker
+from tracking.utils.fps import FpsMeter, draw_fps
 
 
 def load_detector(det_model):
@@ -17,9 +20,33 @@ def load_detector(det_model):
 
 
 def load_tracker(model_name, weights):
-    return ReIDTracker(iou_thresh=0.3, low_iou_thresh=0.2, high_thresh=0.4, low_thresh=0.1, reid_thresh=0.50,
-        max_lost=60, min_hits=2, reid_interval=15, bank_size=30, ema_alpha=0.9, reid_model_name=model_name,
-        reid_weights=weights, )
+    reid = OSNetReID(
+        model_name=model_name,
+        weights_path=weights,
+        min_h=80,
+    )
+
+    association = MotionAppearanceAssociation(
+        iou_thresh=0.3,
+        low_iou_thresh=0.2,
+        appearance_thresh=0.50,
+        use_low_score_rescue=True,
+        lost_association="appearance",
+    )
+
+    return Tracker(
+        motion_factory=KalmanFilterXYAH,
+        appearance_model=reid,
+        association=association,
+        max_lost=60,
+        min_hits=2,
+        appearance_interval=15,
+        bank_size=30,
+        ema_alpha=0.9,
+        high_thresh=0.4,
+        low_thresh=0.1,
+        max_appearance_per_frame=2,
+    )
 
 
 def build_writer(args):
@@ -65,7 +92,6 @@ def run(args):
     next_write_t = time.perf_counter()
 
     try:
-
         while True:
             if args.detector == "yolo":
                 frame = next(frame_iter)
@@ -84,7 +110,7 @@ def run(args):
             fps = fps_meter.tick()
 
             if fps is not None:
-                vis = draw_fps(vis, fps)
+                xvis = draw_fps(vis, fps)
 
             now = time.perf_counter()
 
