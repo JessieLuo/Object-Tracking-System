@@ -20,7 +20,7 @@ WIDTH, HEIGHT = 320, 320
 
 FPS = 30
 BITRATE = 3_000_000
-RTSP_URL = "rtsp://127.0.0.1:8554/cam0"
+RTSP_URL = "rtsp://127.0.0.1:8554/imxcam"
 
 parser = argparse.ArgumentParser()
 

@@ -1,67 +1,64 @@
 import argparse
-import time
 
 import cv2
+import numpy as np
 
 from detection.imx_zmq_adapter import IMXZmqAdapter
 from detection.yolo_det import UltralyticsYoloDetector
-from streaming.rtsp_pub import RtspWriter
+
 from streaming.subscribe import FrameSource
+from streaming.rtsp_pub import RtspWriter
 from streaming.vid_pub import VideoFileWriter
-from tracking.appearance.osnet import OSNetReID
-from tracking.association.strategy import MotionAppearanceAssociation
-from tracking.motion.kalman import KalmanFilterXYAH
-from tracking.tracker import Tracker
-from tracking.utils.fps import FpsMeter, draw_fps
+
+from tracking.builder import build_tracker
+from tracking.observation import Observation
+from tracking.utils.draw import draw_tracks
 from tracking.utils.boxes import nms_dets
+from tracking.utils.fps import FpsMeter, draw_fps
 
 
 def load_detector(det_model):
-    return UltralyticsYoloDetector(det_model, conf=0.1, classes=[0], )
-
-
-def load_tracker(model_name, weights):
-    reid = OSNetReID(
-        model_name=model_name,
-        weights_path=weights,
-        min_h=80,
+    return UltralyticsYoloDetector(
+        det_model,
+        conf=0.1,
+        classes=[0],
     )
 
-    association = MotionAppearanceAssociation(
-        iou_thresh=0.3,
-        low_iou_thresh=0.2,
-        appearance_thresh=0.42,
-        use_low_score_rescue=True,
-        lost_association="appearance",
-    )
 
-    return Tracker(
-        motion_factory=KalmanFilterXYAH,
-        appearance_model=reid,
-        association=association,
-        max_lost=60,
-        min_hits=2,
-        appearance_interval=15,
-        bank_size=30,
-        ema_alpha=0.9,
-        high_thresh=0.4,
-        low_thresh=0.1,
-        max_appearance_per_frame=2,
-    )
+def build_observations(dets):
+    observations = []
+
+    for det in dets:
+        observations.append(
+            Observation(
+                box=det[:4].astype(np.float32),
+                score=float(det[4]),
+                feat=None,
+            )
+        )
+
+    return observations
 
 
 def build_writer(args):
     if args.writer == "rtsp":
-        writer = RtspWriter(url=args.output, size_wh=(args.width, args.height), fps=args.fps, )
+        writer = RtspWriter(
+            url=args.output,
+            size_wh=(args.width, args.height),
+            fps=args.fps,
+        )
 
     elif args.writer == "video":
-        writer = VideoFileWriter(path=args.output, size_wh=(args.width, args.height), fps=args.fps, )
+        writer = VideoFileWriter(
+            path=args.output,
+            size_wh=(args.width, args.height),
+            fps=args.fps,
+        )
 
     else:
         raise ValueError(f"unknown writer: {args.writer}")
 
     writer.open()
-
     return writer
 
 
@@ -75,57 +72,64 @@ def run(args):
         frame_iter = source.frames()
 
     elif args.detector == "imx_zmq":
-        source = IMXZmqAdapter(addr=args.zmq_addr, print_latency=True, )
+        source = IMXZmqAdapter(
+            addr=args.zmq_addr,
+            print_latency=True,
+        )
+
         detector = None
         frame_iter = None
 
     else:
         raise ValueError(f"unknown detector: {args.detector}")
 
-    tracker = load_tracker(args.reid_model_name, args.reid_weights)
-
+    tracker = build_tracker(args)
     writer = build_writer(args)
-
     fps_meter = FpsMeter()
-
-    out_interval = 1.0 / args.fps
-
-    next_write_t = time.perf_counter()
 
     try:
         while True:
             if args.detector == "yolo":
                 frame = next(frame_iter)
+
                 dets = detector.inference(frame)
-                dets = nms_dets(dets, iou_thr=0.5)
+
+                dets = nms_dets(
+                    dets,
+                    iou_thr=0.5,
+                )
 
             else:
                 frame, dets, det_valid = source.read()
+
                 if not det_valid:
                     continue
 
-            tracks, vis = tracker.update(frame, dets)
+            observations = build_observations(dets)
 
-            if len(tracks) > 0:
-                print(tracks[:, :5])
+            tracks = tracker.update(
+                frame,
+                observations,
+            )
+
+            vis = draw_tracks(
+                frame,
+                tracks,
+            )
 
             fps = fps_meter.tick()
 
             if fps is not None:
-                xvis = draw_fps(vis, fps)
+                vis = draw_fps(
+                    vis,
+                    fps,
+                )
 
-            now = time.perf_counter()
-
-            if now >= next_write_t:
-                writer.write(vis)
-
-                next_write_t += out_interval
-
-                if next_write_t < now - out_interval:
-                    next_write_t = now + out_interval
+            writer.write(vis)
 
             if args.show:
                 cv2.imshow("track", vis)
+
                 if cv2.waitKey(1) & 0xFF == 27:
                     break
 
@@ -135,6 +139,7 @@ def run(args):
     finally:
         if args.detector == "yolo":
             source.release()
+
         elif args.detector == "imx_zmq":
             source.close()
 
@@ -145,27 +150,33 @@ def run(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
-    # If result not yolo-style no need sub streaming
     parser.add_argument("--source", required=None)
-
     parser.add_argument("--output", required=True)
 
-    parser.add_argument("--writer", default="rtsp")
+    parser.add_argument(
+        "--writer",
+        choices=["rtsp", "video"],
+        default="rtsp",
+    )
 
-    parser.add_argument("--detector", choices=["yolo", "imx_zmq"], default="yolo", )
+    parser.add_argument(
+        "--detector",
+        choices=["yolo", "imx_zmq"],
+        default="yolo",
+    )
 
     parser.add_argument("--det_model", required=None)
 
-    parser.add_argument("--zmq_addr", default="tcp://127.0.0.1:5555", )
+    parser.add_argument(
+        "--zmq_addr",
+        default="tcp://127.0.0.1:5555",
+    )
 
     parser.add_argument("--reid_model_name", required=True)
-
     parser.add_argument("--reid_weights", required=True)
 
     parser.add_argument("--width", type=int, default=320)
-
     parser.add_argument("--height", type=int, default=320)
-
     parser.add_argument("--fps", type=float, default=25)
 
     parser.add_argument("--show", action="store_true")

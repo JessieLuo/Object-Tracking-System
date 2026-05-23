@@ -1,386 +1,228 @@
-import cv2
-import numpy as np
+# tracking/tracker.py
 
-from tracking.track_state import Track
-from tracking.appearance.memory import AppearanceStore
+from tracking.track import Track, TrackState
+from tracking.interfaces import MotionModule, AppearanceModule
+from tracking.utils.boxes import bbox_iou
 
 
 class Tracker:
     def __init__(
             self,
-            motion_factory,
-            appearance_model,
             association,
-            max_lost=60,
+            motion: MotionModule | None = None,
+            appearance: AppearanceModule | None = None,
+            max_missed=60,
             min_hits=2,
-            appearance_interval=5,
-            bank_size=30,
-            ema_alpha=0.9,
-            high_thresh=0.4,
-            low_thresh=0.1,
-            max_appearance_per_frame=4,
+            soft_lost=10,
     ):
-        self.motion_factory = motion_factory
-        self.appearance_model = appearance_model
         self.association = association
 
-        self.appearance_store = None
-        if self.appearance_model is not None:
-            self.appearance_store = AppearanceStore(
-                bank_size=bank_size,
-                ema_alpha=ema_alpha,
-            )
+        self.motion = motion
+        self.appearance = appearance
 
-        self.max_lost = max_lost
+        self.max_missed = max_missed
         self.min_hits = min_hits
-        self.appearance_interval = appearance_interval
-        self.high_thresh = high_thresh
-        self.low_thresh = low_thresh
-        self.max_appearance_per_frame = max_appearance_per_frame
+        self.soft_lost = soft_lost
 
-        self.active_tracks = []
-        self.lost_tracks = []
-        self.removed_tracks = []
+        self.tracks = []
 
         self.next_id = 0
         self.frame_id = 0
 
-    def split_detections(self, dets):
-        if dets is None or len(dets) == 0:
-            empty = np.empty((0, 6), dtype=np.float32)
-            return empty, empty
-
-        dets = np.asarray(dets, dtype=np.float32)
-
-        high_dets = dets[dets[:, 4] >= self.high_thresh]
-
-        low_dets = dets[
-            (dets[:, 4] >= self.low_thresh)
-            & (dets[:, 4] < self.high_thresh)
-        ]
-
-        return high_dets, low_dets
-
-    def predict_tracks(self):
-        for track in self.active_tracks:
-            track.predict()
-
-        for track in self.lost_tracks:
-            track.predict()
-
-    def extract_feature(self, frame, box):
-        if self.appearance_model is None:
-            return None
-
-        return self.appearance_model.extract(frame, box)
-
-    def build_high_det_features(self, frame, high_dets, force=False):
-        if self.appearance_model is None:
-            return None
-
-        det_feats = [None for _ in range(len(high_dets))]
-
-        if not force and self.frame_id % self.appearance_interval != 0:
-            return det_feats
-
-        max_extract = len(high_dets) if force else self.max_appearance_per_frame
-
-        extracted = 0
-
-        for i, det in enumerate(high_dets):
-            if extracted >= max_extract:
-                break
-
-            feat = self.extract_feature(frame, det[:4])
-            det_feats[i] = feat
-
-            if feat is not None:
-                extracted += 1
-
-        return det_feats
-
-    def build_det_features(self, frame, dets, force=False):
-        if self.appearance_model is None:
-            return None
-
-        det_feats = [None for _ in range(len(dets))]
-
-        if not force and self.frame_id % self.appearance_interval != 0:
-            return det_feats
-
-        max_extract = len(dets) if force else self.max_appearance_per_frame
-
-        extracted = 0
-
-        for i, det in enumerate(dets):
-            if extracted >= max_extract:
-                break
-
-            feat = self.extract_feature(frame, det[:4])
-            det_feats[i] = feat
-
-            if feat is not None:
-                extracted += 1
-
-        return det_feats
-    
-    def create_track(self, det, feat=None):
-        box = det[:4]
-        score = det[4]
-        cls_id = det[5] if len(det) > 5 else 0
-
-        motion = self.motion_factory(box)
+    def create_track(self, observation):
 
         track = Track(
-            box=box,
-            score=score,
-            cls_id=cls_id,
             track_id=self.next_id,
-            motion=motion,
+            observation=observation,
         )
+
+        # tentative starts with one hit
+        track.hits = 1
 
         self.next_id += 1
 
-        if self.appearance_store is not None and feat is not None:
-            self.appearance_store.update(track.id, feat)
-
         return track
 
-    def update_active_matches(self, result, high_dets, high_det_feats):
-        for track_i, det_i in result.active_matches:
-            track = self.active_tracks[track_i]
-            det = high_dets[det_i]
+    def remove_dead_tracks(self):
 
-            track.update(
-                box=det[:4],
-                score=det[4],
-                cls_id=det[5] if len(det) > 5 else 0,
-            )
+        alive_tracks = []
 
-            if (
-                    self.appearance_store is not None
-                    and high_det_feats is not None
-                    and high_det_feats[det_i] is not None
-            ):
-                self.appearance_store.update(
-                    track.id,
-                    high_det_feats[det_i],
-                )
+        for track in self.tracks:
 
-    def update_low_matches(self, result, low_dets):
-        for track_i, det_i in result.low_matches:
-            track = self.active_tracks[track_i]
-            det = low_dets[det_i]
+            if track.missed > self.max_missed:
 
-            track.update(
-                box=det[:4],
-                score=det[4],
-                cls_id=det[5] if len(det) > 5 else 0,
-            )
-
-    def recover_lost_tracks(self, result, high_dets, high_det_feats):
-        recovered_lost_ids = set()
-
-        for lost_i, det_i in result.recovered_matches:
-            track = self.lost_tracks[lost_i]
-            det = high_dets[det_i]
-
-            track.update(
-                box=det[:4],
-                score=det[4],
-                cls_id=det[5] if len(det) > 5 else 0,
-            )
-
-            if (
-                    self.appearance_store is not None
-                    and high_det_feats is not None
-                    and high_det_feats[det_i] is not None
-            ):
-                self.appearance_store.update(
-                    track.id,
-                    high_det_feats[det_i],
-                )
-
-            self.active_tracks.append(track)
-            recovered_lost_ids.add(lost_i)
-
-        self.lost_tracks = [
-            track
-            for i, track in enumerate(self.lost_tracks)
-            if i not in recovered_lost_ids
-        ]
-
-    def recover_lost_tracks_from_low(self, result, low_dets, low_det_feats):
-        recovered_lost_ids = set()
-
-        for lost_i, det_i in result.low_recovered_matches:
-            track = self.lost_tracks[lost_i]
-            det = low_dets[det_i]
-
-            track.update(
-                box=det[:4],
-                score=det[4],
-                cls_id=det[5] if len(det) > 5 else 0,
-            )
-
-            if low_det_feats is not None and low_det_feats[det_i] is not None:
-                self.appearance_store.update(
-                    track.id,
-                    low_det_feats[det_i],
-                )
-
-            self.active_tracks.append(track)
-            recovered_lost_ids.add(lost_i)
-
-        self.lost_tracks = [
-            track
-            for i, track in enumerate(self.lost_tracks)
-            if i not in recovered_lost_ids
-        ]
-
-    def move_unmatched_active_to_lost(self, unmatched_active_ids):
-        unmatched_set = set(unmatched_active_ids)
-
-        moved_to_lost = []
-
-        for i, track in enumerate(self.active_tracks):
-            if i in unmatched_set:
-                track.mark_lost()
-                moved_to_lost.append(track)
-
-        self.active_tracks = [
-            track
-            for i, track in enumerate(self.active_tracks)
-            if i not in unmatched_set
-        ]
-
-        self.lost_tracks.extend(moved_to_lost)
-
-    def create_new_tracks(self, frame, high_dets, high_det_feats, unmatched_high_ids):
-        for det_i in unmatched_high_ids:
-            feat = None
-
-            if high_det_feats is not None:
-                feat = high_det_feats[det_i]
-
-            if feat is None:
-                feat = self.extract_feature(frame, high_dets[det_i][:4])
-
-            track = self.create_track(high_dets[det_i], feat=feat)
-            self.active_tracks.append(track)
-
-    def prune_lost_tracks(self):
-        kept_lost = []
-
-        for track in self.lost_tracks:
-            if track.lost > self.max_lost:
                 track.mark_removed()
-                self.removed_tracks.append(track)
 
-                if self.appearance_store is not None:
-                    self.appearance_store.remove(track.id)
+                if self.motion is not None:
+                    self.motion.remove(track)
+
+                if self.appearance is not None:
+                    self.appearance.remove(track)
+
             else:
-                kept_lost.append(track)
+                alive_tracks.append(track)
 
-        self.lost_tracks = kept_lost
+        self.tracks = alive_tracks
 
-    def visible_tracks(self):
-        output = []
-
-        for track in self.active_tracks:
-            if track.hits < self.min_hits:
-                continue
-
-            x1, y1, x2, y2 = track.box
-
-            output.append([
-                x1,
-                y1,
-                x2,
-                y2,
-                track.id,
-                track.score,
-                track.cls_id,
-            ])
-
-        if len(output) == 0:
-            return np.empty((0, 7), dtype=np.float32)
-
-        return np.asarray(output, dtype=np.float32)
-
-    def draw_tracks(self, frame):
-        vis = frame.copy()
-
-        for track in self.active_tracks:
-            if track.hits < self.min_hits:
-                continue
-
-            x1, y1, x2, y2 = map(int, track.box)
-
-            cv2.rectangle(
-                vis,
-                (x1, y1),
-                (x2, y2),
-                (0, 255, 0),
-                2,
-            )
-
-            cv2.putText(
-                vis,
-                f"id={track.id}",
-                (x1, max(0, y1 - 5)),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.5,
-                (0, 255, 0),
-                1,
-                cv2.LINE_AA,
-            )
-
-        return vis
-
-    def update(self, frame, dets):
+    def update(
+            self,
+            frame,
+            observations,
+    ):
         self.frame_id += 1
 
-        high_dets, low_dets = self.split_detections(dets)
+        # -------------------------------------------------
+        # appearance frame context
+        # -------------------------------------------------
 
-        self.predict_tracks()
+        if self.appearance is not None:
 
-        force_reid = len(self.lost_tracks) > 0
-        high_det_feats = self.build_det_features(
-            frame,
-            high_dets,
-            force=force_reid,
+            self.appearance.begin_frame(
+                frame,
+                self.frame_id,
+            )
+
+        # -------------------------------------------------
+        # timestep advance
+        # -------------------------------------------------
+
+        for track in self.tracks:
+            track.step()
+
+        # -------------------------------------------------
+        # motion predict
+        # -------------------------------------------------
+
+        if self.motion is not None:
+            self.motion.predict(self.tracks)
+
+        # -------------------------------------------------
+        # association
+        # -------------------------------------------------
+
+        matches, unmatched_tracks, unmatched_obs = (
+            self.association.associate(
+                tracks=self.tracks,
+                observations=observations,
+                motion=self.motion,
+                appearance=self.appearance,
+            )
         )
-        low_det_feats = self.build_det_features(
-            frame,
-            low_dets,
-            force=force_reid,
-        )
 
-        result = self.association.associate(
-            active_tracks=self.active_tracks,
-            lost_tracks=self.lost_tracks,
-            high_dets=high_dets,
-            low_dets=low_dets,
-            high_det_feats=high_det_feats,
-            low_det_feats=low_det_feats,
-            appearance_store=self.appearance_store,
-        )
+        # -------------------------------------------------
+        # matched tracks
+        # -------------------------------------------------
 
-        self.update_active_matches(result, high_dets, high_det_feats)
-        self.update_low_matches(result, low_dets)
-        self.recover_lost_tracks(result, high_dets, high_det_feats)
-        self.recover_lost_tracks_from_low(result, low_dets, low_det_feats)
-        self.move_unmatched_active_to_lost(result.unmatched_active_ids)
-        self.create_new_tracks(
-            frame,
-            high_dets,
-            high_det_feats,
-            result.unmatched_high_ids,
-        )
-        self.prune_lost_tracks()
+        for track_i, obs_i in matches:
 
-        tracks = self.visible_tracks()
-        vis = self.draw_tracks(frame)
+            track = self.tracks[track_i]
 
-        return tracks, vis
+            observation = observations[obs_i]
+
+            track.update(observation)
+
+            if self.motion is not None:
+                self.motion.update(track, observation)
+
+            if self.appearance is not None:
+                self.appearance.update(track, observation)
+
+        # -------------------------------------------------
+        # unmatched tracks
+        # -------------------------------------------------
+
+        for track_i in unmatched_tracks:
+
+            track = self.tracks[track_i]
+
+            if track.state == TrackState.REMOVED:
+                continue
+
+            if track.missed > self.soft_lost:
+                track.mark_lost()
+
+        # -------------------------------------------------
+        # duplicate suppression
+        # -------------------------------------------------
+
+        filtered_unmatched_obs = []
+
+        for obs_i in unmatched_obs:
+
+            observation = observations[obs_i]
+
+            duplicate = False
+
+            for track in self.tracks:
+
+                if track.state == TrackState.REMOVED:
+                    continue
+
+                if track.last_observation is None:
+                    continue
+
+                iou = bbox_iou(
+                    track.last_observation.box,
+                    observation.box,
+                )
+
+                # existing track already explains this detection
+                if iou > 0.5:
+
+                    duplicate = True
+
+                    # keep old track alive
+                    track.missed = min(
+                        track.missed,
+                        self.soft_lost,
+                    )
+
+                    break
+
+            if not duplicate:
+                filtered_unmatched_obs.append(obs_i)
+
+        # -------------------------------------------------
+        # create new tracks
+        # -------------------------------------------------
+
+        for obs_i in filtered_unmatched_obs:
+
+            observation = observations[obs_i]
+
+            track = self.create_track(observation)
+
+            self.tracks.append(track)
+
+            if self.motion is not None:
+                self.motion.initiate(track, observation)
+
+            if self.appearance is not None:
+                self.appearance.initiate(track, observation)
+
+        # -------------------------------------------------
+        # cleanup
+        # -------------------------------------------------
+
+        self.remove_dead_tracks()
+
+        return self.active_tracks()
+
+    def active_tracks(self):
+
+        outputs = []
+
+        for track in self.tracks:
+
+            if track.state != TrackState.ACTIVE:
+                continue
+
+            if not track.just_updated:
+                continue
+
+            if track.hits < self.min_hits:
+                continue
+
+            outputs.append(track)
+
+        return outputs

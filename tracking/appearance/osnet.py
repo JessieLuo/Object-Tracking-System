@@ -1,5 +1,5 @@
 import os
-import time
+# import time
 
 import cv2
 import numpy as np
@@ -27,6 +27,12 @@ class OSNetReID:
         self.model.to(self.device)
 
     def extract(self, frame, box):
+        """Extract appearance feature from the box region in the frame.
+        Returns:
+            feat: np.ndarray of shape (feat_dim, ), normalized to unit length.
+            
+            Returns None if the box is invalid or too small.
+        """
         x1, y1, x2, y2 = map(int, box)
 
         h, w = frame.shape[:2]
@@ -45,33 +51,32 @@ class OSNetReID:
             return None
 
         if crop.shape[0] < self.min_h:
+            # invalid box
             return None
 
         # =====================================================
         # preprocess
         # =====================================================
+        # t0 = time.time()
 
-        t0 = time.time()
-
-        # 原版是 (128,256)
-        # 树莓派建议缩小
+        # 树莓派建议从 (128, 256) 缩小到 (64,128)，以提升速度
         crop = cv2.resize(crop, (64, 128))
-
+        # 由于 OpenCV 读取的图像是 BGR 格式，而ReID模型需要 RGB 格式，因此需要转换颜色空间
         crop = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
-
+        # 归一化处理，将像素值从 [0, 255] 转换到 [0, 1]，并转换为 float32 类型
         crop = crop.astype(np.float32) / 255.0
-
+        # 将图像numpy数组转换为PyTorch tensor 张量
         tensor = torch.from_numpy(crop)
-
+        # 将 (H, W, C) 转换为CNN默认格式: (C, H, W), 并且让 tensor 内存连续
+        # 之后加一个批次维度，变成 (B, C, H, W) -> B=1 
         tensor = (tensor.permute(2, 0, 1).contiguous().unsqueeze(0))
 
-        prep_ms = (time.time() - t0) * 1000
+        # prep_ms = (time.time() - t0) * 1000
 
         # =====================================================
         # forward
         # =====================================================
-
-        t1 = time.time()
+        # t1 = time.time()
 
         with torch.no_grad():
             feat = self.model(tensor)
@@ -85,12 +90,10 @@ class OSNetReID:
         # =====================================================
         # normalize
         # =====================================================
-
         feat = feat.cpu().numpy()[0].astype(np.float32)
-
         norm = np.linalg.norm(feat)
-
         if norm < 1e-6:
+            # 避免除以零的情况
             return None
 
         return feat / norm

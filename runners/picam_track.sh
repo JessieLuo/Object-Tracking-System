@@ -1,6 +1,6 @@
 python main.py \
   --detector yolo \
-  --source rtsp://127.0.0.1:8554/cam0 \
+  --source rtsp://127.0.0.1:8554/imxcam \
   --output rtsp://127.0.0.1:8554/picamdet \
   --width 320 --height 320 \
   --det_model models/yolo26n.mnn \

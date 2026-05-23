@@ -76,6 +76,7 @@ class IMXZmqAdapter:
 
         objects = header.get("objects", [])
 
+        # wrap det results into (N, 6) array for tracking
         if objects:
             dets = np.array(
                 [
