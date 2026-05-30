@@ -1,1 +1,0 @@
-python streaming/script/picam.py

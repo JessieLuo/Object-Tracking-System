@@ -12,11 +12,11 @@ from picamera2.devices.imx500 import (
 
 ZMQ_ADDR = "tcp://*:5555"
 
-WIDTH, HEIGHT = 320, 320
+WIDTH, HEIGHT = 416, 416
 
 MODEL = (
     "/usr/share/imx500-models/"
-    "imx500_network_ssd_mobilenetv2_fpnlite_320x320_pp.rpk"
+    "imx500_network_nanodet_plus_416x416_pp.rpk"
 )
 
 # Reduce threshold so that send low score to tracker
@@ -178,8 +178,8 @@ def main():
             "FrameRate": intrinsics.inference_rate,
         },
         transform=Transform(
-            hflip=True,
-            vflip=True,
+            hflip=False,
+            vflip=False,
         ),
         buffer_count=4,
     )

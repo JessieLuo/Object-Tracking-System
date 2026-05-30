@@ -5,4 +5,7 @@ python main.py \
   --width 320 --height 320 \
   --fps 26 \
   --reid_model_name osnet_x1_0 \
-  --reid_weights weights/osnet_x1_0_market.pth
+  --reid_weights weights/osnet_x1_0_market.pth \
+  --emit_tracks \
+  --camera_id imxAI \
+  --track_udp_host 192.168.3.39
